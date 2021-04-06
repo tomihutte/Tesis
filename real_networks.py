@@ -37,9 +37,10 @@ def k_shortest_paths(G, source, target, k, dists_calc=True, weight=None):
             if i == k - 1:
                 break
         if i < k - 1:
-            print('Hay solo {} caminos'.format(i + 1))
-    except:
-        print('Nodos {}-{} no conectados'.format(source, target))
+            print('Hay solo {} caminos entre {} y {}'.format(
+                i + 1, source + 1, target + 1))
+    except nx.NetworkXNoPath:
+        print('Nodos {}-{} no conectados'.format(source + 1, target + 1))
         paths = np.array([[]])
         dists = np.repeat(np.inf, k)
     if dists_calc:
@@ -61,7 +62,7 @@ def global_k_shortest_paths(G, K, weight=None, trace=False, dists=True):
         # para no calcular dos veces las cosas, solo recorro a partir del siguiente nodo
         for i in range(index + 1, len(nodes)):
             if trace:
-                print('{}-{}'.format(node, i))
+                print('{}-{}'.format(node + 1, i + 1))
             # obtengo los paths y sus distancias
             if dists:
                 k_dists, k_paths = k_shortest_paths(G, node, nodes[i], K,
@@ -89,16 +90,20 @@ def path_edges_length(G, paths, k_vals):
         for col in range(row + 1, G.number_of_nodes()):
             # los diferentes caminos entre dos nodos
             for i, k in enumerate(k_vals):
-                lengths[i, row, col] = len(paths[row, col][k - 1])
+                if paths[row, col][k - 1] != None:
+                    lengths[i, row, col] = len(paths[row, col][k - 1])
+                else:
+                    lengths[i, row, col] = np.inf
                 for path in paths[row, col][:k]:
-                    l = len(path)
-                    # para recorrer desde el primer hasta el anteultimo nodo del camino
-                    for n in range(l - 1):
-                        node_1 = path[n]
-                        node_2 = path[n + 1]
-                        n_min = min(node_1, node_2)
-                        n_max = max(node_1, node_2)
-                        edges[i, n_min, n_max] += 1
+                    if path != None:
+                        l = len(path)
+                        # para recorrer desde el primer hasta el anteultimo nodo del camino
+                        for n in range(l - 1):
+                            node_1 = path[n]
+                            node_2 = path[n + 1]
+                            n_min = min(node_1, node_2)
+                            n_max = max(node_1, node_2)
+                            edges[i, n_min, n_max] += 1
     return edges, lengths
 
 
@@ -107,16 +112,20 @@ def mean_k_shortest_path_length(G, k_vals, weight=None, trace=False):
                                            np.max(k_vals),
                                            weight=weight,
                                            trace=trace)
-    path_edges, path_lenghts = path_edges_length(G, paths, k_vals)
+    path_edges, path_lengths = path_edges_length(G, paths, k_vals)
     n = G.number_of_nodes()
     e = G.number_of_edges()
     edges_percentage = (path_edges != 0).sum(axis=2).sum(axis=1) / e
-    path_lenghts = path_lenghts.mean(axis=2).mean(axis=1)
+    p_lengths = np.zeros(shape=(len(k_vals)))
+    for i in range(len(path_lengths)):
+        p_mean = (path_lengths[i][(path_lengths[i] != np.inf) *
+                                  (path_lengths[i] > 0)]).mean()
+        p_lengths[i] = p_mean
     means = np.zeros(shape=len(k_vals))
     for i, k in enumerate(k_vals):
-        k_dists = dists[:, :, i][np.triu_indices(n, 1)]
+        k_dists = dists[:, :, k - 1][np.triu_indices(n, 1)]
         means[i] = k_dists[k_dists != np.inf].mean()
-    return means, path_lenghts, edges_percentage
+    return means, p_lengths, edges_percentage
 
 
 def connectomes_filtered(filter_attr,
@@ -204,21 +213,23 @@ def plot(x,
     plt.figure(figsize=(8, 6))
     if legends != None:
         for i in range(len(legends)):
-            plt.errorbar(x[i],
+            plt.errorbar(x,
                          y[i].mean(axis=1),
                          yerr=y[i].std(axis=1) / np.sqrt(y[i].shape[1]),
                          label=legends[i],
                          lw=lw,
                          alpha=alpha,
-                         fmt=fmt)
+                         fmt=fmt,
+                         ecolor='black')
         plt.legend(fontsize=fs)
     else:
-        plt.plot(x,
-                 y.mean(axis=1),
-                 yerr=y.std(axis=1) / np.sqrt(y.shape[1]),
-                 lw=lw,
-                 alpha=alpha,
-                 fmt=fmt)
+        plt.errorbar(x,
+                     y.mean(axis=1),
+                     yerr=y.std(axis=1) / np.sqrt(y.shape[1]),
+                     lw=lw,
+                     alpha=alpha,
+                     fmt=fmt,
+                     ecolor='black')
     plt.xlabel(xlabel, fontsize=fs)
     plt.ylabel(ylabel, fontsize=fs)
     plt.tick_params(labelsize=fs)
@@ -342,7 +353,7 @@ def pruned_measures(prune_type,
                 edge_connectivity[i, j] = nx.edge_connectivity(
                     G, flow_func=shortest_augmenting_path)
                 # longitud, aristas usadas y longitud en aristas
-                path_means, e_percent, path_lengths = mean_k_shortest_path_length(
+                path_means, path_lengths, e_percent = mean_k_shortest_path_length(
                     G, k_vals, weight=map_name, trace=trace_k_paths)
 
                 k_paths[:, i, j] = path_means
@@ -429,7 +440,8 @@ def pruned_measures(prune_type,
 
     plot(
         prune_vals * 100, sh_paths, 'Aristas eliminadas [%]', 'Longitud media',
-        r'Shortest path - Pacientes sanos - $f\left(w\right)={}',
+        r'Shortest path - Pacientes sanos - $f\left(w\right)$={}'.format(
+            map_str),
         'sh_path_{}_prune_{:0f}_{:0f}_{}.pdf'.format(prune_type,
                                                      np.min(prune_vals) * 100,
                                                      np.max(prune_vals) * 100,
@@ -458,7 +470,7 @@ def pruned_measures(prune_type,
          k_paths,
          'Aristas eliminadas [%]',
          'Longitud media',
-         'K shortest paths - Pacientes sanos',
+         r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
          'k_paths_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
              k_vals, prune_type,
              np.min(prune_vals) * 100,
@@ -469,7 +481,7 @@ def pruned_measures(prune_type,
          k_lengths,
          'Aristas eliminadas [%]',
          'Numero de aristas medio',
-         'K shortest paths - Pacientes sanos',
+         r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
          'k_lengths_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
              k_vals, prune_type,
              np.min(prune_vals) * 100,
@@ -477,10 +489,10 @@ def pruned_measures(prune_type,
          legends=k_legends)
 
     plot(prune_vals * 100,
-         k_edges,
+         k_edges * 100,
          'Aristas eliminadas [%]',
-         'Valor medio de aristas usadas [%]',
-         'K shortest paths - Pacientes sanos',
+         'Porcentaje de aristas usadas',
+         r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
          'k_edges_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
              k_vals, prune_type,
              np.min(prune_vals) * 100,
@@ -497,8 +509,11 @@ sh_paths, clustering, edge_connectivity, k_paths, k_lengths, k_edges, prune_vals
     prune_vals_number=10,
     prune_vals_max=0.85,
     prune_vals_offset=0.01,
-    k_vals=[1, 2],
-    trace=True)
+    k_vals=[20],
+    trace=True,
+    only_plot=False,
+    filter_att='NOMBRE ',
+    filter_val='caso010')
 
 # np.save('sh_path_percentage_prune_37_85_inv_log', sh_paths)
 # np.save('clustering_percentage_prune_37_85_inv_log', clustering)
