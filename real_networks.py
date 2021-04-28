@@ -6,43 +6,51 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import operator as op
+import os
+from networkx.classes.function import path_weight
 from networkx.algorithms.flow import shortest_augmenting_path
 
-
-def path_length(G, path, weight='weight'):
-    # esto sirve para calcular la longitud de un camino
-    # primero vemos si el grafo es pesado o no
-    if nx.is_weighted(G, weight=weight):
-        # creamos una lista donde cada elemento son los pesos de la arista
-        costs = [G[path[i]][path[i + 1]][weight] for i in range(len(path) - 1)]
-        # sumamos
-        length = np.sum(costs)
-    else:
-        # si no es pesado el grafo, es el numero de nodos del camino menos 1
-        length = len(path) - 1
-    return length
+# def path_length(G, path, weight='weight'):
+#     # esto sirve para calcular la longitud de un camino
+#     # primero vemos si el grafo es pesado o no
+#     if nx.is_weighted(G, weight=weight):
+#         #funcion de networkx
+#         length = nx.classes.function.path_weight(G, path, weight)
+#     else:
+#         # si no es pesado el grafo, es el numero de nodos del camino menos 1
+#         length = len(path) - 1
+#     return length
 
 
 def k_shortest_paths(G, source, target, k, dists_calc=True, weight=None):
     # esto es un generador de caminos, los devuelve del mas corto al mas largo
     gen = nx.shortest_simple_paths(G, source, target, weight)
+    # los caminos los voy a guardar en un array de objetos (inicializados como None)
     paths = np.empty(shape=(k), dtype=object)
+    # si me piden calcular las distancias tmb
     if dists_calc:
         dists = np.zeros(shape=(k))
     try:
+        # recorro el generador
         for i, path in enumerate(gen):
+            # agrego el camino
             paths[i] = path
             if dists_calc:
-                dists[i] = path_length(G, path, weight=weight)
+                # agrego la distancia
+                dists[i] = path_weight(G, path, weight=weight)
             if i == k - 1:
+                # si llegue a k caminos, dejo de recorrer
                 break
         if i < k - 1:
+            # si calcule menos que k caminos, aviso
             print('Hay solo {} caminos entre {} y {}'.format(
                 i + 1, source + 1, target + 1))
     except nx.NetworkXNoPath:
-        print('Nodos {}-{} no conectados'.format(source + 1, target + 1))
+        # si no estan conectados los nodos tengo que avisar
+        print('Nodos {}-{} no conectados'.format(source, target))
         paths = np.array([[]])
         dists = np.repeat(np.inf, k)
+    # retorno lo calculado
     if dists_calc:
         return dists, paths
     else:
@@ -78,9 +86,51 @@ def global_k_shortest_paths(G, K, weight=None, trace=False, dists=True):
         return k_paths_mat
 
 
+def k_shortest_paths_load(G,
+                          case,
+                          k_max,
+                          prune_type,
+                          prune_val,
+                          weight,
+                          dists=True,
+                          trace=False):
+    n_nodes = 82
+    paths = np.empty(shape=(n_nodes, n_nodes, k_max), dtype=object)
+    if dists:
+        dists_mat = np.zeros(shape=(n_nodes, n_nodes, k_max))
+    current_dir = os.getcwd()
+    os.chdir(
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths")
+    for k_v in range(k_max):
+        fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
+            case, k_v + 1, prune_type, prune_val, weight)
+        f = open(fname, "r")
+        for i, line in enumerate(f):
+            if (i > 0):
+                split = line.split(',')
+                i = int(split[0])
+                j = int(split[1])
+                paths[i, j, k_v] = [int(elem) for elem in split[2:]]
+                if dists:
+                    dists_mat[i, j, k_v] = path_weight(G, paths[i, j, k_v],
+                                                       weight)
+    os.chdir(current_dir)
+    if dists:
+        return paths, dists_mat
+    else:
+        return paths
+
+
 def path_edges_length(G, paths, k_vals):
-    # esta función me devuelve una matriz con las conexiónes presentes en un camino dado
-    # creo la matriz de conexiones
+    # esta funcion devuelve una matriz de aristas (edges)
+    # donde en cada elemento i,j esta cuantas veces fue usada
+    # la arista i,j en los k_shortest_paths para los valores de k presentes en k_vals
+
+    # tambien devuelve una matriz de nodos (lengths) donde en el elemento i,j
+    # esta calculada la distancia, medida como numero de aristas, que hay entre el
+    # nodo i y el nodo j, en el k_shortest_path para valores de k en k_vals
+
+    # creo las matrices
     edges = np.zeros(shape=(len(k_vals), G.number_of_nodes(),
                             G.number_of_nodes()))
     lengths = np.zeros(shape=(len(k_vals), G.number_of_nodes(),
@@ -88,17 +138,23 @@ def path_edges_length(G, paths, k_vals):
     #recorro todos los pares de nodos
     for row in range(G.number_of_nodes()):
         for col in range(row + 1, G.number_of_nodes()):
-            # los diferentes caminos entre dos nodos
+            # recorro los valores presentes en k_vals
             for i, k in enumerate(k_vals):
+                # me paro en el camino k_esimo
+                # ipdb.set_trace()
                 if paths[row, col][k - 1] != None:
-                    lengths[i, row, col] = len(paths[row, col][k - 1])
+                    # la longitud del camino es la cantidad de aristas + 1
+                    lengths[i, row, col] = len(paths[row, col][k - 1]) - 1
                 else:
+                    # si el camino es None, le pongo longitud inf
                     lengths[i, row, col] = np.inf
                 for path in paths[row, col][:k]:
                     if path != None:
                         l = len(path)
                         # para recorrer desde el primer hasta el anteultimo nodo del camino
                         for n in range(l - 1):
+                            # aca le sumo uno a la arista que correspone, la que conecta
+                            # el nodo n con el nodo n+1 del camino
                             node_1 = path[n]
                             node_2 = path[n + 1]
                             n_min = min(node_1, node_2)
@@ -107,22 +163,43 @@ def path_edges_length(G, paths, k_vals):
     return edges, lengths
 
 
-def mean_k_shortest_path_length(G, k_vals, weight=None, trace=False):
-    dists, paths = global_k_shortest_paths(G,
-                                           np.max(k_vals),
-                                           weight=weight,
-                                           trace=trace)
+def mean_k_shortest_path_length(G,
+                                case,
+                                k_vals,
+                                prune_type,
+                                prune_val,
+                                weight,
+                                trace=False):
+    # calculo la media de distancia, uso de aristas y distancia en aristas
+
+    # primero obteno las distancias y los caminos
+    paths, dists = k_shortest_paths_load(G=G,
+                                         case=case,
+                                         k_max=np.max(k_vals),
+                                         prune_type=prune_type,
+                                         prune_val=prune_val,
+                                         weight=weight,
+                                         dists=True)
+    # obtengo las distancias en aristas y las aristas usadas
     path_edges, path_lengths = path_edges_length(G, paths, k_vals)
+    # numero de nodos y aristas presentes en el grafo
     n = G.number_of_nodes()
     e = G.number_of_edges()
+    # saco el porcentaje de aristas que se estan usando (de las que existen)
     edges_percentage = (path_edges != 0).sum(axis=2).sum(axis=1) / e
+    # voy a calcular la media de las longitudes
     p_lengths = np.zeros(shape=(len(k_vals)))
     for i in range(len(path_lengths)):
-        p_mean = (path_lengths[i][(path_lengths[i] != np.inf) *
-                                  (path_lengths[i] > 0)]).mean()
-        p_lengths[i] = p_mean
+        # hago la media por sobre los valores diferentes de inf y mayores
+        # que 0, los que representan nodos conectados
+        p_lengths[i] = (path_lengths[i][(path_lengths[i] != np.inf) *
+                                        (path_lengths[i] > 0)]).mean()
+    # calculo la media de distancias
     means = np.zeros(shape=len(k_vals))
+    # lo hago para cada valor de k elegido
     for i, k in enumerate(k_vals):
+        # calculo la media sobre los valores de la parte triangular superior
+        # ya que la inferior son cero, no los toque, y no uso los inf
         k_dists = dists[:, :, k - 1][np.triu_indices(n, 1)]
         means[i] = k_dists[k_dists != np.inf].mean()
     return means, p_lengths, edges_percentage
@@ -132,21 +209,43 @@ def connectomes_filtered(filter_attr,
                          filter_value,
                          operator,
                          all=False,
-                         ret_cases=False):
-    list_path = '/home/tomas/Desktop/Tesis/conjunto_datos_conectomica_migranya/conjunto_datos_conectomica_migranya/lista_de_casos.xlsx'
-    connectomes_path = '/home/tomas/Desktop/Tesis/conjunto_datos_conectomica_migranya/conjunto_datos_conectomica_migranya/matrices_conectividad/'
+                         ret_cases=False,
+                         remove_nodes=[34, 83]):
+    # esta funcion devuelve todas las matrices de conexión que cumplan con que
+    # operator(filter_attr,filter_value), donde operator es un operador booleano
+
+    # los path para la lista de conectomas y los conectomas (matrices)
+    list_path = r'C:\Users\Tomas\Desktop\Tesis\datos\conjunto_datos_conectomica_migranya\lista_de_casos.xlsx'
+    connectomes_path = r'C:\Users\Tomas\Desktop\Tesis\datos\conjunto_datos_conectomica_migranya\matrices_conectividad\\'
+    # cargo la lista de conectomas a un panda dataframe
     cases = pd.read_excel(list_path)
+    # si quiero todos, paso todos
     if all:
         cases = cases['NOMBRE '].values
+    # si no, me fijo que conectomas cumplen con la condición
     else:
+        # lo paso a minuscula para no tener problema
         cases[filter_attr] = cases[filter_attr].str.lower()
         cases = cases[operator(cases[filter_attr], filter_value)]['NOMBRE ']
+        # devuelvo un array con los nombres de los casos
         cases = cases.values
+    # ahora voy a cargar los conectomas
     connectomes = np.zeros(shape=(len(cases), 84, 84))
     for i, case in enumerate(cases):
+        # contruyo el path del conectoma que quiero cargar
         connectome_path = connectomes_path + case + '_conectomica_fiber_count.csv'
+        # cargo el conectoma
         connectome = np.genfromtxt(connectome_path)
+        # borro la diagonal
+        connectome[np.tril_indices(84)] = 0
         connectomes[i] = connectome
+
+    # hay un problema con los nodos 34 y 83 asi que los borramos
+    if remove_nodes != None:
+        connectomes = np.delete(connectomes, remove_nodes, axis=1)
+        connectomes = np.delete(connectomes, remove_nodes, axis=2)
+
+    # por si alguna razon alguien quiere el nombre de los casos
     if ret_cases:
         return connectomes, cases
     else:
@@ -154,6 +253,8 @@ def connectomes_filtered(filter_attr,
 
 
 def connectomes_components(connectomes, cases):
+    # calcula por cuantos componentes esta formado el grafo
+    # si es mas que uno, quiere decir que esta desconectado
     disconnected = []
     components = np.zeros(shape=len(connectomes))
     max_components_size = np.zeros(shape=len(connectomes))
@@ -174,15 +275,14 @@ def check_prune_disconnect(prune_type,
                            operator=None,
                            all=True,
                            remove_nodes=None):
+    # calcula cuantos grafos estan desconectados y sus componentes
+    # para diferentes valores de prunning
     connectomes, cases = connectomes_filtered(filter_attr,
                                               filter_val,
                                               operator,
                                               all=all,
-                                              ret_cases=True)
-
-    if remove_nodes != None:
-        connectomes = np.delete(connectomes, remove_nodes, axis=1)
-        connectomes = np.delete(connectomes, remove_nodes, axis=2)
+                                              ret_cases=True,
+                                              remove_nodes=remove_nodes)
 
     disconnected = []
     components = np.zeros(shape=(len(prune_vals), len(connectomes)))
@@ -240,14 +340,21 @@ def plot(x,
 
 
 def prune_connectomes(connectomes_original, prune_type, val):
+    # hace prunning a los conectomas
     connectomes = np.copy(connectomes_original)
+    # percentage es borrar el porcentage mas bajo de las aristas
     if prune_type == 'percentage':
         for connectome in connectomes:
+            # ordeno las aristas (cuento las que son 0 tmb)
             mat = np.sort(connectome[np.triu_indices(connectome.shape[0], 1)])
             n_elements = len(mat)
+            # elijo el valor que determine el porcentaje que le pase
             percentile_value = mat[int(val * (n_elements - 1))]
+            # todo lo que este debajo de eso lo hago 0
             connectome[connectome <= percentile_value] = 0
         return connectomes
+    # aca borro todas las conexiones cuya media sea mas baja que el valor
+    # de threshols
     elif prune_type == 'threshold':
         mask = connectomes.mean(axis=0)
         mask = mask <= val
@@ -255,8 +362,9 @@ def prune_connectomes(connectomes_original, prune_type, val):
         mask = np.repeat(mask, len(connectomes), axis=0)
         connectomes[mask] = 0
         return connectomes
+    # aca borro todas las conexiones cuyo coeficiente de variación
+    # sea mas alto que cierto valor
     elif prune_type == 'var_coeff':
-        # ipdb.set_trace()
         mask = connectomes.std(axis=0) / connectomes.mean(axis=0)
         mask[np.isnan(mask)] = 0
         mask = mask >= val
@@ -271,6 +379,7 @@ def prune_connectomes(connectomes_original, prune_type, val):
 
 
 def add_edge_map(G, map, map_name):
+    # agrego un mapeo a los ejes
     for u, v in G.edges():
         G.edges[u, v][map_name] = map(G.edges[u, v]['weight'])
     pass
@@ -291,21 +400,20 @@ def pruned_measures(prune_type,
                     trace=False,
                     trace_k_paths=False,
                     only_plot=False):
+    # esta funcion aplica prunning progresivo a un conjunto de conectomas
+    # y calcula medidas a medida que avanza el prunning
+
     # cargo solo los conectomas que me interesan
-    connectomes_original = connectomes_filtered(filter_att, filter_val, op)
+    connectomes_original, cases = connectomes_filtered(
+        filter_att, filter_val, op, remove_nodes=remove_nodes, ret_cases=True)
     n_connectomes = len(connectomes_original)
 
     print('Loading {} connectomes'.format(n_connectomes))
 
-    # borro algunos nodos si es necesario
-    if remove_nodes != None:
-        connectomes_original = np.delete(connectomes_original,
-                                         remove_nodes,
-                                         axis=1)
-        connectomes_original = np.delete(connectomes_original,
-                                         remove_nodes,
-                                         axis=2)
     if prune_vals_given == None:
+        assert prune_vals_max != None, "prune_vals_max should be max prune value"
+        assert prune_vals_number != None, "prune_vals_number should be number of prune values"
+        assert prune_vals_offset != None, "prune_vals_offset should be offset from lowest prune value"
         # voy a calcular el numero minimo de conexiónes que son 0 para algun conectoma
         nn = connectomes_original.shape[1]
         # solo me importa la parte superior de la matriz, sin diagonal
@@ -321,6 +429,7 @@ def pruned_measures(prune_type,
 
     if not (only_plot):
         #creo los arrays donde vamos a guardar las cosas
+        e_number = np.zeros(shape=(prune_vals_number, n_connectomes))
         sh_paths = np.zeros(shape=(prune_vals_number, n_connectomes))
         k_paths = np.zeros(shape=(len(k_vals), prune_vals_number,
                                   n_connectomes))
@@ -341,6 +450,8 @@ def pruned_measures(prune_type,
                 start = time.time()
                 # creo un grafo del conectoma
                 G = nx.from_numpy_matrix(connectome)
+                # agrego el numero de aristas que tiene el grafo
+                e_number[i, j] = G.number_of_edges()
                 # le agrego un atributo
                 add_edge_map(G, map, map_name)
                 # clustering pesado
@@ -354,7 +465,13 @@ def pruned_measures(prune_type,
                     G, flow_func=shortest_augmenting_path)
                 # longitud, aristas usadas y longitud en aristas
                 path_means, path_lengths, e_percent = mean_k_shortest_path_length(
-                    G, k_vals, weight=map_name, trace=trace_k_paths)
+                    G,
+                    cases[j],
+                    k_vals,
+                    prune_type,
+                    prune_val,
+                    weight=map_name,
+                    trace=trace_k_paths)
 
                 k_paths[:, i, j] = path_means
                 k_lengths[:, i, j] = path_lengths
@@ -364,71 +481,80 @@ def pruned_measures(prune_type,
                 # printeo el tiempo
                 if trace:
                     print(
-                        'Prune val: {:3f}/{:3f} - Connectome:{}/{} - {:5f} s'.
-                        format(prune_val, np.max(prune_vals), j + 1,
-                               n_connectomes, end - start))
+                        'Prune val: {:.3f}/{:.3f} - Connectome:{}/{} - {:.5f} s'
+                        .format(prune_val, np.max(prune_vals), j + 1,
+                                n_connectomes, end - start))
+
+        # cambio el directorio para guardar las cosas
+        current_dir = os.getcwd()
+        os.chdir(
+            "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data")
 
         np.save(
-            'sh_path_{}_prune_{:0f}_{:0f}_{}'.format(prune_type,
-                                                     np.min(prune_vals) * 100,
-                                                     np.max(prune_vals) * 100,
-                                                     map_name), sh_paths)
+            'e_number_{}_prune_{}_{}_{}.npy'.format(prune_type,
+                                                    np.min(prune_vals) * 100,
+                                                    np.max(prune_vals) * 100,
+                                                    map_name), e_number)
         np.save(
-            'clustering_{}_prune_{:0f}_{:0f}_{}'.format(
-                prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name), clustering)
+            'sh_path_{}_prune_{}_{}_{}'.format(prune_type,
+                                               np.min(prune_vals) * 100,
+                                               np.max(prune_vals) * 100,
+                                               map_name), sh_paths)
         np.save(
-            'edge_conn_{}_prune_{:0f}_{:0f}_{}'.format(
-                prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name), edge_connectivity)
+            'clustering_{}_prune_{}_{}_{}'.format(prune_type,
+                                                  np.min(prune_vals) * 100,
+                                                  np.max(prune_vals) * 100,
+                                                  map_name), clustering)
         np.save(
-            'k_paths_{}_{}_prune_{:0f}_{:0f}_{}'.format(
-                k_vals, prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name), k_paths)
-
+            'edge_conn_{}_prune_{}_{}_{}'.format(prune_type,
+                                                 np.min(prune_vals) * 100,
+                                                 np.max(prune_vals) * 100,
+                                                 map_name), edge_connectivity)
         np.save(
-            'k_lengths_{}_{}_prune_{:0f}_{:0f}_{}'.format(
-                k_vals, prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name), k_lengths)
-
+            'k_paths_{}_{}_prune_{}_{}_{}'.format(k_vals, prune_type,
+                                                  np.min(prune_vals) * 100,
+                                                  np.max(prune_vals) * 100,
+                                                  map_name), k_paths)
         np.save(
-            'k_edges_{}_{}_prune_{:0f}_{:0f}_{}'.format(
-                k_vals, prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name), k_edges)
+            'k_lengths_{}_{}_prune_{}_{}_{}'.format(k_vals, prune_type,
+                                                    np.min(prune_vals) * 100,
+                                                    np.max(prune_vals) * 100,
+                                                    map_name), k_lengths)
+        np.save(
+            'k_edges_{}_{}_prune_{}_{}_{}'.format(k_vals, prune_type,
+                                                  np.min(prune_vals) * 100,
+                                                  np.max(prune_vals) * 100,
+                                                  map_name), k_edges)
 
     else:
-        sh_paths = np.load('sh_path_{}_prune_{:0f}_{:0f}_{}.npy'.format(
+        current_dir = os.getcwd()
+        os.chdir(
+            "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data")
+        e_number = np.load('e_number_{}_prune_{}_{}_{}.npy'.format(
             prune_type,
             np.min(prune_vals) * 100,
             np.max(prune_vals) * 100, map_name))
-
-        clustering = np.load('clustering_{}_prune_{:0f}_{:0f}_{}.npy'.format(
+        sh_paths = np.load('sh_path_{}_prune_{}_{}_{}.npy'.format(
             prune_type,
             np.min(prune_vals) * 100,
             np.max(prune_vals) * 100, map_name))
-
-        edge_connectivity = np.load(
-            'edge_conn_{}_prune_{:0f}_{:0f}_{}.npy'.format(
-                prune_type,
-                np.min(prune_vals) * 100,
-                np.max(prune_vals) * 100, map_name))
-
-        k_paths = np.load('k_paths_{}_{}_prune_{:0f}_{:0f}_{}.npy'.format(
+        clustering = np.load('clustering_{}_prune_{}_{}_{}.npy'.format(
+            prune_type,
+            np.min(prune_vals) * 100,
+            np.max(prune_vals) * 100, map_name))
+        edge_connectivity = np.load('edge_conn_{}_prune_{}_{}_{}.npy'.format(
+            prune_type,
+            np.min(prune_vals) * 100,
+            np.max(prune_vals) * 100, map_name))
+        k_paths = np.load('k_paths_{}_{}_prune_{}_{}_{}.npy'.format(
             k_vals, prune_type,
             np.min(prune_vals) * 100,
             np.max(prune_vals) * 100, map_name))
-
-        k_lengths = np.load('k_lengths_{}_{}_prune_{:0f}_{:0f}_{}.npy'.format(
+        k_lengths = np.load('k_lengths_{}_{}_prune_{}_{}_{}.npy'.format(
             k_vals, prune_type,
             np.min(prune_vals) * 100,
             np.max(prune_vals) * 100, map_name))
-
-        k_edges = np.load('k_edges_{}_{}_prune_{:0f}_{:0f}_{}.npy'.format(
+        k_edges = np.load('k_edges_{}_{}_prune_{}_{}_{}.npy'.format(
             k_vals, prune_type,
             np.min(prune_vals) * 100,
             np.max(prune_vals) * 100, map_name))
@@ -438,31 +564,32 @@ def pruned_measures(prune_type,
     elif map_name == 'inv':
         map_str = '1/w'
 
+    os.chdir(current_dir)
     plot(
         prune_vals * 100, sh_paths, 'Aristas eliminadas [%]', 'Longitud media',
         r'Shortest path - Pacientes sanos - $f\left(w\right)$={}'.format(
             map_str),
-        'sh_path_{}_prune_{:0f}_{:0f}_{}.pdf'.format(prune_type,
-                                                     np.min(prune_vals) * 100,
-                                                     np.max(prune_vals) * 100,
-                                                     map_name))
+        'sh_path_{}_prune_{}_{}_{}.pdf'.format(prune_type,
+                                               np.min(prune_vals) * 100,
+                                               np.max(prune_vals) * 100,
+                                               map_name))
 
     plot(
         prune_vals * 100, clustering, 'Aristas eliminadas [%]',
         'Coeficiente de clustering medio',
         'Clustering coefficient - Pacientes sanos',
-        'clustering_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
-            prune_type,
-            np.min(prune_vals) * 100,
-            np.max(prune_vals) * 100, map_name))
+        'clustering_{}_prune_{}_{}_{}.pdf'.format(prune_type,
+                                                  np.min(prune_vals) * 100,
+                                                  np.max(prune_vals) * 100,
+                                                  map_name))
 
     plot(
         prune_vals * 100, edge_connectivity, 'Aristas eliminadas [%]',
         'Edge connectivity ', 'Edge connectivity - Pacientes sanos',
-        'edge_conn_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
-            prune_type,
-            np.min(prune_vals) * 100,
-            np.max(prune_vals) * 100, map_name))
+        'edge_conn_{}_prune_{}_{}_{}.pdf'.format(prune_type,
+                                                 np.min(prune_vals) * 100,
+                                                 np.max(prune_vals) * 100,
+                                                 map_name))
 
     k_legends = [r'$k={}$'.format(k) for k in k_vals]
 
@@ -471,10 +598,10 @@ def pruned_measures(prune_type,
          'Aristas eliminadas [%]',
          'Longitud media',
          r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
-         'k_paths_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
-             k_vals, prune_type,
-             np.min(prune_vals) * 100,
-             np.max(prune_vals) * 100, map_name),
+         'k_paths_{}_{}_prune_{}_{}_{}.pdf'.format(k_vals, prune_type,
+                                                   np.min(prune_vals) * 100,
+                                                   np.max(prune_vals) * 100,
+                                                   map_name),
          legends=k_legends)
 
     plot(prune_vals * 100,
@@ -482,18 +609,29 @@ def pruned_measures(prune_type,
          'Aristas eliminadas [%]',
          'Numero de aristas medio',
          r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
-         'k_lengths_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
-             k_vals, prune_type,
-             np.min(prune_vals) * 100,
-             np.max(prune_vals) * 100, map_name),
+         'k_lengths_{}_{}_prune_{}_{}_{}.pdf'.format(k_vals, prune_type,
+                                                     np.min(prune_vals) * 100,
+                                                     np.max(prune_vals) * 100,
+                                                     map_name),
          legends=k_legends)
 
     plot(prune_vals * 100,
          k_edges * 100,
          'Aristas eliminadas [%]',
-         'Porcentaje de aristas usadas',
+         'Porcentaje de aristas reales usadas',
          r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
-         'k_edges_{}_{}_prune_{:0f}_{:0f}_{}.pdf'.format(
+         'k_edges_{}_{}_prune_{}_{}_{}.pdf'.format(k_vals, prune_type,
+                                                   np.min(prune_vals) * 100,
+                                                   np.max(prune_vals) * 100,
+                                                   map_name),
+         legends=k_legends)
+
+    plot(prune_vals * 100,
+         k_edges * e_number,
+         'Aristas eliminadas [%]',
+         'Numero de aristas reales usadas',
+         r'K shortest paths - Pacientes sanos - $f(w)$={}'.format(map_str),
+         'k_number_of_edges_{}_{}_prune_{}_{}_{}.pdf'.format(
              k_vals, prune_type,
              np.min(prune_vals) * 100,
              np.max(prune_vals) * 100, map_name),
@@ -502,145 +640,195 @@ def pruned_measures(prune_type,
     return sh_paths, clustering, edge_connectivity, k_paths, k_lengths, k_edges, prune_vals
 
 
-sh_paths, clustering, edge_connectivity, k_paths, k_lengths, k_edges, prune_vals = pruned_measures(
-    'percentage',
-    map=lambda x: 1 / x,
-    map_name='inv',
-    prune_vals_number=10,
-    prune_vals_max=0.85,
-    prune_vals_offset=0.01,
-    k_vals=[20],
-    trace=True,
-    only_plot=False,
-    filter_att='NOMBRE ',
-    filter_val='caso010')
+def k_shortest_path_save(prune_type,
+                         map,
+                         map_name,
+                         k,
+                         prune_vals_given=None,
+                         prune_vals_number=None,
+                         prune_vals_max=None,
+                         prune_vals_offset=None,
+                         filter_att='GRUPO',
+                         filter_val='control sano',
+                         op=op.eq,
+                         remove_nodes=[34, 83],
+                         trace=False,
+                         trace_k_paths=False,
+                         prune_start=0,
+                         prune_finish=None,
+                         case_start=0,
+                         case_finish=None):
+    # cargo solo los conectomas que me interesan
+    connectomes_original, cases = connectomes_filtered(
+        filter_att, filter_val, op, remove_nodes=remove_nodes, ret_cases=True)
+    n_connectomes = len(connectomes_original)
+    c_size = connectomes_original.shape[1]
+    if case_finish == None:
+        case_finish = n_connectomes
+    print('Loading {} connectomes'.format(n_connectomes))
 
-# np.save('sh_path_percentage_prune_37_85_inv_log', sh_paths)
-# np.save('clustering_percentage_prune_37_85_inv_log', clustering)
-# np.save('edge_conn_percentage_prune_37_85_inv_log', edge_connectivity)
-# np.save('k_paths_percentage_prune_37_85_inv_log', k_paths)
+    if prune_vals_given == None:
+        assert prune_vals_max != None, "prune_vals_max should be max prune value"
+        assert prune_vals_number != None, "prune_vals_number should be number of prune values"
+        assert prune_vals_offset != None, "prune_vals_offset should be offset from lowest prune value"
+        # voy a calcular el numero minimo de conexiónes que son 0 para algun conectoma
+        nn = connectomes_original.shape[1]
+        # solo me importa la parte superior de la matriz, sin diagonal
+        min_connectomes_zeros = np.min(
+            (connectomes_original
+             == 0).sum(axis=2).sum(axis=1)) - nn - (nn * (nn - 1) / 2)
+        # el porcentaje lo saco dividiendo por la cantidad total de elementos en la parte superior de la matriz
+        min_zero_percentage = min_connectomes_zeros / (nn * (nn - 1) / 2)
+        prune_vals = np.linspace(min_zero_percentage - prune_vals_offset,
+                                 prune_vals_max, prune_vals_number)
+        if prune_finish == None:
+            prune_finish = prune_vals_number
+    else:
+        prune_vals = prune_vals_given
 
-# sh_paths = np.load('sh_path_percentage_prune_37_85_inv_log.npy')
-# clustering = np.load('clustering_percentage_prune_37_85_inv_log.npy')
-# edge_connectivity = np.load('edge_conn_percentage_prune_37_85_inv_log.npy')
-# k_paths = np.load('k_paths_percentage_prune_37_85_inv_log.npy')
+    k_paths_save = np.empty(shape=(prune_vals_number, n_connectomes, c_size,
+                                   c_size),
+                            dtype=object)
+    k_dists_save = np.zeros(shape=(prune_vals_number, n_connectomes, c_size,
+                                   c_size))
+    start_flag = False
 
-# plot(np.linspace(0, 85, 100),
-#      (edge_connectivity.mean(axis=-1) - edge_connectivity[0].mean()) /
-#      edge_connectivity[0].mean(), 'Aristas eliminadas [%]', 'Variación [%]',
-#      'Edge connectivity - Pacientes sanos',
-#      'edge_connectivity_prune_0_85_inv_log.pdf')
+    for i, prune_val in enumerate(prune_vals):
+        # les aplico pruning a los conectomas
+        connectomes = prune_connectomes(connectomes_original, prune_type,
+                                        prune_val)
+        for j, connectome in enumerate(connectomes):
+            if ((i >= prune_start) and ((j >= case_start) | start_flag)):
+                start_flag = True
+                if not ((i >= prune_finish) and (j >= case_finish)):
+                    if trace:
+                        print(
+                            'Prune val: {:.3f}/{:.3f} - {} - Connectome: {}/{} - '
+                            .format(prune_val, np.max(prune_vals), cases[j],
+                                    j + 1, n_connectomes),
+                            end='')
+                    # mido el tiempo
+                    start = time.time()
+                    # creo un grafo del conectoma
+                    G = nx.from_numpy_matrix(connectome)
+                    # le agrego un atributo
+                    add_edge_map(G, map, map_name)
+                    # longitud, aristas usadas y longitud en aristas
+                    # k_paths_save[i, j] = global_k_shortest_paths(
+                    #     G,
+                    #     k,
+                    #     trace=trace_k_paths,
+                    #     weight=map_name,
+                    #     dists=False)
+                    k_paths_save[i,
+                                 j], k_dists_save[i,
+                                                  j] = k_shortest_paths_load(
+                                                      G=G,
+                                                      case=cases[j],
+                                                      k_max=k,
+                                                      prune_type=prune_type,
+                                                      prune_val=prune_val,
+                                                      weight=map_name,
+                                                      dists=False)
+                    # save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths"
+                    # for k_v in range(k):
+                    #     fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
+                    #         cases[j], k_v + 1, prune_type, prune_val, map_name)
+                    #     fname = os.path.join(save_path, fname)
+                    #     f = open(fname, "w")
+                    #     f.truncate(0)
+                    #     f.write("Inicio,Fin,Camino(separado por comas)\n")
+                    #     paths = k_paths_save[i, j]
+                    #     for i_idx in range(paths.shape[0]):
+                    #         for j_idx in range(i_idx + 1, paths.shape[1]):
+                    #             if paths[i_idx, j_idx][k_v] != None:
+                    #                 f.write("{},{},{}\n".format(
+                    #                     i_idx, j_idx, ','.join([
+                    #                         str(e)
+                    #                         for e in paths[i_idx, j_idx][k_v]
+                    #                     ])))
+                    #             else:
+                    #                 f.write("{},{},None\n".format(
+                    #                     i_idx, j_idx))
+                    #     f.close()
 
-# map_name = '1/log(1+w)'
-# map = lambda x: 1 / np.log10(1 + x)
-# prune_type = 'var_coeff'
-# prune_vals = 10**np.linspace(1, -1, 10)
-# k_vals = np.array([2, 5, 10])
-# trace = True
+                    end = time.time()
+                    # printeo el tiempo
+                    if trace:
+                        print('{:.5f} s'.format(end - start))
 
-# filter_atts = ['control sano', 'migraña crónica', 'migraña episódica']
-# legends = ['Control sano', 'Migraña crónica', 'Migraña episódica']
-# discs = []
-# lens = []
-# for i, filter_att in enumerate(filter_atts):
-#     discs.append(
-#         check_prune_disconnect(prune_type='percentage',
-#                                prune_vals=np.linspace(0, 1, 100),
-#                                filter_attr='GRUPO',
-#                                filter_val=filter_att,
-#                                operator=op.eq,
-#                                all=False,
-#                                remove_nodes=[34, 83]))
-#     lens.append([len(disc) for disc in discs[i]])
-# plot(x=np.tile(np.linspace(0, 100, 100), 3).reshape(3, 100)[:, 70:],
-#      y=np.array(lens)[:, 70:],
-#      xlabel='Porcentaje de aristas totales eliminadas',
-#      ylabel='Número de conectomas desconectados',
-#      title='',
-#      savefig='disconnected_connectomes_70_up.pdf',
-#  legends=legends)
+    paths_name = "k_paths_saved_k={}_{}_prune_{}_{}_{}".format(
+        k, prune_type,
+        np.min(prune_vals) * 100,
+        np.max(prune_vals) * 100, map_name)
+    dists_name = "k_dists_saved_k={}_{}_prune_{}_{}_{}".format(
+        k, prune_type,
+        np.min(prune_vals) * 100,
+        np.max(prune_vals) * 100, map_name)
+    save_file_k = os.join(
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
+        paths_name)
+    save_file_d = os.join(
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
+        dists_name)
+    np.save(save_file_k, k_paths_save)
+    np.save(save_file_d, k_dists_save)
 
-# filter_atts = ['control sano', 'migraña crónica', 'migraña episódica']
-# legends = ['Control sano', 'Migraña crónica', 'Migraña episódica']
-# discs = []
-# comps = np.zeros(shape=(len(legends), 100))
-# lens = []
-# for i, filter_att in enumerate(filter_atts):
-#     disc, comp = check_prune_disconnect(prune_type='percentage',
-#                                         prune_vals=np.linspace(0, 1, 100),
-#                                         filter_attr='GRUPO',
-#                                         filter_val=filter_att,
-#                                         operator=op.eq,
-#                                         all=False,
-#                                         remove_nodes=[34, 83])
-#     comps[i] = comp.mean(axis=-1)
-#     discs.append(disc)
-#     lens.append([len(disc) for disc in discs[i]])
+    pass
 
-# plot(x=np.tile(np.linspace(0, 100, 100), 3).reshape(3, 100)[:, 70:],
-#      y=comps[:, 70:],
-#      xlabel='Porcentaje de aristas totales eliminadas',
-#      ylabel='Numero medio de componentes',
-#      title='',
-#      savefig='components_connectomes_70_up.pdf',
-#      legends=legends)
-# def plot_prunned_evolution(save, remove_nodes=[34, 83], offset=0):
 
-# remove_nodes = [34, 83]
-# offset = 0
+pruned_measures(prune_type='percentage',
+                map=lambda x: 1 / (np.log10(1 + x)),
+                map_name='inv_log',
+                k_vals=[1, 10, 20, 30, 40, 50],
+                prune_vals_given=None,
+                prune_vals_number=10,
+                prune_vals_max=0.85,
+                prune_vals_offset=0.01,
+                filter_att='GRUPO',
+                filter_val='control sano',
+                op=op.eq,
+                remove_nodes=[34, 83],
+                trace=True,
+                trace_k_paths=False,
+                only_plot=False)
 
-# if remove_nodes == None:
-#     title = 'Conectomas completos'
-# else:
-#     l = remove_nodes[:-1]
-#     last_val = remove_nodes[-1]
-#     l += (['y', last_val])
-#     title = 'Removiendo nodos {}'.format(' '.join([str(elem) for elem in l]))
-# filter_atts = ['control sano', 'migraña crónica', 'migraña episódica']
-# legends = ['Control sano', 'Migraña crónica', 'Migraña episódica']
-# discs = []
-# comps = np.zeros(shape=(len(legends), 100))
-# maxs = np.zeros(shape=(len(legends), 100))
-# lens = []
-# for i, filter_att in enumerate(filter_atts):
-#     disc, comp, max = check_prune_disconnect(prune_type='percentage',
-#                                              prune_vals=np.linspace(0, 1, 100),
-#                                              filter_attr='GRUPO',
-#                                              filter_val=filter_att,
-#                                              operator=op.eq,
-#                                              all=False,
-#                                              remove_nodes=remove_nodes)
-#     comps[i] = comp.mean(axis=-1)
-#     maxs[i] = max.mean(axis=-1) / np.max(max)
-#     discs.append(disc)
-#     lens.append([len(disc) for disc in discs[i]])
+# k_shortest_path_save(prune_type='percentage',
+#                      map=lambda x: 1 / np.log10(1 + x),
+#                      map_name='inv_log',
+#                      k=50,
+#                      prune_vals_given=None,
+#                      prune_vals_number=10,
+#                      prune_vals_max=0.85,
+#                      prune_vals_offset=0.01,
+#                      filter_att='GRUPO',
+#                      filter_val='control sano',
+#                      op=op.eq,
+#                      remove_nodes=[34, 83],
+#                      trace=True,
+#                      trace_k_paths=False,
+#                      prune_start=0,
+#                      case_start=0,
+#                      prune_finish=None,
+#                      case_finish=None)
 
-# plot(x=np.tile(np.linspace(0, 100, 100), 3).reshape(3, 100)[:, offset:],
-#      y=maxs[:, offset:],
-#      xlabel='Porcentaje de aristas totales eliminadas',
-#      ylabel='Tamaño medio de la máxima componente (norm.)',
-#      title=title,
-#      savefig='max_component_size_mean_{}_up.pdf'.format(offset),
-#      legends=legends,
-#      marker=None)
-
-# plot(np.linspace(0, 85, 100),
-#      (sh_paths.mean(axis=-1) - sh_paths[0].mean()) / sh_paths[0].mean(),
-#      'Aristas eliminadas [%]', 'Variación [%]',
-#      r'Shortest path - Pacientes sanos - $f\left(w\right)=1/log(1+w)$',
-#      'sh_path_percentage_prune_0_85_inv_log.pdf')
-
-# plot(np.linspace(0, 85, 100),
-#      (clustering.mean(axis=-1) - clustering[0].mean()) / clustering[0].mean(),
-#      'Aristas eliminadas [%]', 'Variación [%]',
-#      'Clustering coefficient - Pacientes sanos',
-#      'clustering_percentage_prune_0_85_inv_log.pdf')
-
-# plot(np.linspace(0, 85, 100),
-#      (edge_connectivity.mean(axis=-1) - edge_connectivity[0].mean()) /
-#      edge_connectivity[0].mean(), 'Aristas eliminadas [%]', 'Variación [%]',
-#      'Edge connectivity - Pacientes sanos',
-#      'edge_connectivity_prune_0_85_inv_log.pdf')
-
-# np.save('sh_path_percentage_prune_0_85_inv_log', sh_paths)
-# np.save('clustering_percentage_prune_0_85_inv_log', clustering)
+# c_dir = os.getcwd()
+# os.chdir("C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths")
+# f_list = os.listdir()
+# f_list.reverse()
+# # f_list = f_list[:30]
+# for file in f_list:
+#     # print('prev:\t', file)
+#     name_split = file.split('.t')
+#     name_split[0] += "_inv_log"
+#     name_split[1] = "txt"
+#     # name_split[0] = name_split[0][1:]
+#     # name_split[1] = name_split[1].split('_', 1)
+#     # k = int(name_split[1][0]) + 1
+#     # name_split[1][0] = str(k)
+#     # name_split[1] = '_'.join(name_split[1])
+#     # f_name = '='.join(name_split)
+#     # print("post:\t", f_name)
+#     f_name = ".".join(name_split)
+#     os.rename(file, f_name)
+# os.chdir(c_dir)
