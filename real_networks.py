@@ -110,10 +110,16 @@ def k_shortest_paths_load(G,
                 split = line.split(',')
                 i = int(split[0])
                 j = int(split[1])
-                paths[i, j, k_v] = [int(elem) for elem in split[2:]]
-                if dists:
-                    dists_mat[i, j, k_v] = path_weight(G, paths[i, j, k_v],
-                                                       weight)
+                if (split[2] == 'None\n'):
+                    paths[i, j, k_v] = None
+                    if dists:
+                        dists_mat[i, j, k_v] = None
+                else:
+                    paths[i, j, k_v] = [int(elem) for elem in split[2:]]
+                    if dists:
+                        dists_mat[i, j,
+                                  k_v] = path_weight(G, paths[i, j, k_v],
+                                                     weight)
     os.chdir(current_dir)
     if dists:
         return paths, dists_mat
@@ -564,7 +570,7 @@ def pruned_measures(prune_type,
     elif map_name == 'inv':
         map_str = '1/w'
 
-    os.chdir(current_dir)
+    os.chdir("C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning")
     plot(
         prune_vals * 100, sh_paths, 'Aristas eliminadas [%]', 'Longitud media',
         r'Shortest path - Pacientes sanos - $f\left(w\right)$={}'.format(
@@ -636,6 +642,8 @@ def pruned_measures(prune_type,
              np.min(prune_vals) * 100,
              np.max(prune_vals) * 100, map_name),
          legends=k_legends)
+
+    os.chdir(current_dir)
 
     return sh_paths, clustering, edge_connectivity, k_paths, k_lengths, k_edges, prune_vals
 
@@ -714,43 +722,35 @@ def k_shortest_path_save(prune_type,
                     # le agrego un atributo
                     add_edge_map(G, map, map_name)
                     # longitud, aristas usadas y longitud en aristas
-                    # k_paths_save[i, j] = global_k_shortest_paths(
-                    #     G,
-                    #     k,
-                    #     trace=trace_k_paths,
-                    #     weight=map_name,
-                    #     dists=False)
-                    k_paths_save[i,
-                                 j], k_dists_save[i,
-                                                  j] = k_shortest_paths_load(
-                                                      G=G,
-                                                      case=cases[j],
-                                                      k_max=k,
-                                                      prune_type=prune_type,
-                                                      prune_val=prune_val,
-                                                      weight=map_name,
-                                                      dists=False)
-                    # save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths"
-                    # for k_v in range(k):
-                    #     fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
-                    #         cases[j], k_v + 1, prune_type, prune_val, map_name)
-                    #     fname = os.path.join(save_path, fname)
-                    #     f = open(fname, "w")
-                    #     f.truncate(0)
-                    #     f.write("Inicio,Fin,Camino(separado por comas)\n")
-                    #     paths = k_paths_save[i, j]
-                    #     for i_idx in range(paths.shape[0]):
-                    #         for j_idx in range(i_idx + 1, paths.shape[1]):
-                    #             if paths[i_idx, j_idx][k_v] != None:
-                    #                 f.write("{},{},{}\n".format(
-                    #                     i_idx, j_idx, ','.join([
-                    #                         str(e)
-                    #                         for e in paths[i_idx, j_idx][k_v]
-                    #                     ])))
-                    #             else:
-                    #                 f.write("{},{},None\n".format(
-                    #                     i_idx, j_idx))
-                    #     f.close()
+                    k_paths_save[i, j] = global_k_shortest_paths(
+                        G,
+                        k,
+                        trace=trace_k_paths,
+                        weight=map_name,
+                        dists=False)
+                    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths"
+                    for k_v in range(k):
+                        fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
+                            cases[j], k_v + 1, prune_type, prune_val, map_name)
+                        fname = os.path.join(save_path, fname)
+                        f = open(fname, "w")
+                        f.truncate(0)
+                        f.write(
+                            "Inicio,Fin,Camino(separado por comas),Distancia del camino\n"
+                        )
+                        paths = k_paths_save[i, j]
+                        for i_idx in range(paths.shape[0]):
+                            for j_idx in range(i_idx + 1, paths.shape[1]):
+                                if paths[i_idx, j_idx][k_v] != None:
+                                    f.write("{},{},{},{}\n".format(
+                                        i_idx, j_idx, ','.join([
+                                            str(e)
+                                            for e in paths[i_idx, j_idx][k_v]
+                                        ])))
+                                else:
+                                    f.write("{},{},None\n".format(
+                                        i_idx, j_idx))
+                        f.close()
 
                     end = time.time()
                     # printeo el tiempo
