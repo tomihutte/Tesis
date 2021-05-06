@@ -10,17 +10,6 @@ import os
 from networkx.classes.function import path_weight
 from networkx.algorithms.flow import shortest_augmenting_path
 
-# def path_length(G, path, weight='weight'):
-#     # esto sirve para calcular la longitud de un camino
-#     # primero vemos si el grafo es pesado o no
-#     if nx.is_weighted(G, weight=weight):
-#         #funcion de networkx
-#         length = nx.classes.function.path_weight(G, path, weight)
-#     else:
-#         # si no es pesado el grafo, es el numero de nodos del camino menos 1
-#         length = len(path) - 1
-#     return length
-
 
 def k_shortest_paths(G, source, target, k, dists_calc=True, weight=None):
     # esto es un generador de caminos, los devuelve del mas corto al mas largo
@@ -86,22 +75,25 @@ def global_k_shortest_paths(G, K, weight=None, trace=False, dists=True):
         return k_paths_mat
 
 
-def k_shortest_paths_load(G,
-                          case,
-                          k_max,
-                          prune_type,
-                          prune_val,
-                          weight,
-                          dists=True,
-                          trace=False):
+def k_shortest_paths_load_txt(G,
+                              case,
+                              k_max,
+                              prune_type,
+                              prune_val,
+                              weight,
+                              dists=True,
+                              trace=False):
     n_nodes = 82
     paths = np.empty(shape=(n_nodes, n_nodes, k_max), dtype=object)
     if dists:
         dists_mat = np.zeros(shape=(n_nodes, n_nodes, k_max))
     current_dir = os.getcwd()
     os.chdir(
-        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths")
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths\{}"
+        .format(weight))
     for k_v in range(k_max):
+        if trace:
+            print('k={}'.format(k_v))
         fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
             case, k_v + 1, prune_type, prune_val, weight)
         f = open(fname, "r")
@@ -113,9 +105,10 @@ def k_shortest_paths_load(G,
                 if (split[2] == 'None\n'):
                     paths[i, j, k_v] = None
                     if dists:
-                        dists_mat[i, j, k_v] = None
+                        dists_mat[i, j, k_v] = np.inf
                 else:
-                    paths[i, j, k_v] = [int(elem) for elem in split[2:]]
+                    paths[i, j, k_v] = [int(elem) for elem in split[2:-1]]
+                    dists_mat[i, j, k_v] = float(split[-1])
                     if dists:
                         dists_mat[i, j,
                                   k_v] = path_weight(G, paths[i, j, k_v],
@@ -125,6 +118,24 @@ def k_shortest_paths_load(G,
         return paths, dists_mat
     else:
         return paths
+
+
+def k_shortest_paths_load_npy(prune_type, prune_val, map_name, k, dists=True):
+    current_dir = os.getcwd()
+    os.chdir(
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data\k_paths\{}"
+        .format(map_name))
+    paths_name = "k_paths_saved_k=50_{}_prune_{}_{}.npy".format(
+        prune_type, prune_val * 100, map_name)
+    k_paths = np.load(paths_name, allow_pickle=True)
+    if dists:
+        dists_name = "k_dists_saved_k=50_{}_prune_{}_{}.npy".format(
+            prune_type, prune_val * 100, map_name)
+        k_dists = np.load(dists_name, allow_pickle=True)
+        os.chdir(current_dir)
+        return k_paths[:, :, :, :k], k_dists[:, :, :, :k]
+    os.chdir(current_dir)
+    return k_paths[:, :, :, :k]
 
 
 def path_edges_length(G, paths, k_vals):
@@ -149,7 +160,7 @@ def path_edges_length(G, paths, k_vals):
                 # me paro en el camino k_esimo
                 # ipdb.set_trace()
                 if paths[row, col][k - 1] != None:
-                    # la longitud del camino es la cantidad de aristas + 1
+                    # el numero de aristas es el largo del camino -1
                     lengths[i, row, col] = len(paths[row, col][k - 1]) - 1
                 else:
                     # si el camino es None, le pongo longitud inf
@@ -169,23 +180,8 @@ def path_edges_length(G, paths, k_vals):
     return edges, lengths
 
 
-def mean_k_shortest_path_length(G,
-                                case,
-                                k_vals,
-                                prune_type,
-                                prune_val,
-                                weight,
-                                trace=False):
+def mean_k_shortest_path_length(G, k_vals, paths, dists):
     # calculo la media de distancia, uso de aristas y distancia en aristas
-
-    # primero obteno las distancias y los caminos
-    paths, dists = k_shortest_paths_load(G=G,
-                                         case=case,
-                                         k_max=np.max(k_vals),
-                                         prune_type=prune_type,
-                                         prune_val=prune_val,
-                                         weight=weight,
-                                         dists=True)
     # obtengo las distancias en aristas y las aristas usadas
     path_edges, path_lengths = path_edges_length(G, paths, k_vals)
     # numero de nodos y aristas presentes en el grafo
@@ -413,7 +409,6 @@ def pruned_measures(prune_type,
     connectomes_original, cases = connectomes_filtered(
         filter_att, filter_val, op, remove_nodes=remove_nodes, ret_cases=True)
     n_connectomes = len(connectomes_original)
-
     print('Loading {} connectomes'.format(n_connectomes))
 
     if prune_vals_given == None:
@@ -451,6 +446,12 @@ def pruned_measures(prune_type,
             # les aplico pruning a los conectomas
             connectomes = prune_connectomes(connectomes_original, prune_type,
                                             prune_val)
+            start = time.time()
+            k_paths_loaded, k_dists_loaded = k_shortest_paths_load_npy(
+                prune_type, prune_val, map_name, np.max(k_vals), dists=True)
+            if trace:
+                print("Loading k_paths and k_dists - {:.2f} s".format(
+                    time.time() - start))
             for j, connectome in enumerate(connectomes):
                 # mido el tiempo
                 start = time.time()
@@ -471,13 +472,7 @@ def pruned_measures(prune_type,
                     G, flow_func=shortest_augmenting_path)
                 # longitud, aristas usadas y longitud en aristas
                 path_means, path_lengths, e_percent = mean_k_shortest_path_length(
-                    G,
-                    cases[j],
-                    k_vals,
-                    prune_type,
-                    prune_val,
-                    weight=map_name,
-                    trace=trace_k_paths)
+                    G, k_vals, k_paths_loaded[j], k_dists_loaded[j])
 
                 k_paths[:, i, j] = path_means
                 k_lengths[:, i, j] = path_lengths
@@ -728,7 +723,8 @@ def k_shortest_path_save(prune_type,
                         trace=trace_k_paths,
                         weight=map_name,
                         dists=False)
-                    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths"
+                    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths\{}".format(
+                        map_name)
                     for k_v in range(k):
                         fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
                             cases[j], k_v + 1, prune_type, prune_val, map_name)
@@ -746,9 +742,12 @@ def k_shortest_path_save(prune_type,
                                         i_idx, j_idx, ','.join([
                                             str(e)
                                             for e in paths[i_idx, j_idx][k_v]
-                                        ])))
+                                        ]),
+                                        path_weight(G, paths[i_idx,
+                                                             j_idx][k_v],
+                                                    map_name)))
                                 else:
-                                    f.write("{},{},None\n".format(
+                                    f.write("{},{},None,None\n".format(
                                         i_idx, j_idx))
                         f.close()
 
@@ -765,7 +764,7 @@ def k_shortest_path_save(prune_type,
         k, prune_type,
         np.min(prune_vals) * 100,
         np.max(prune_vals) * 100, map_name)
-    save_file_k = os.join(
+    save_file_k = os.path.join(
         "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
         paths_name)
     save_file_d = os.join(
@@ -777,25 +776,26 @@ def k_shortest_path_save(prune_type,
     pass
 
 
-pruned_measures(prune_type='percentage',
-                map=lambda x: 1 / (np.log10(1 + x)),
-                map_name='inv_log',
-                k_vals=[1, 10, 20, 30, 40, 50],
-                prune_vals_given=None,
-                prune_vals_number=10,
-                prune_vals_max=0.85,
-                prune_vals_offset=0.01,
-                filter_att='GRUPO',
-                filter_val='control sano',
-                op=op.eq,
-                remove_nodes=[34, 83],
-                trace=True,
-                trace_k_paths=False,
-                only_plot=False)
+s, c, e_c, k_p, k_l, k_e, p_v = pruned_measures(prune_type='percentage',
+                                                map=lambda x: 1 /
+                                                (np.log10(1 + x)),
+                                                map_name='inv_log',
+                                                k_vals=[1, 2, 5, 10, 20, 50],
+                                                prune_vals_given=None,
+                                                prune_vals_number=10,
+                                                prune_vals_max=0.85,
+                                                prune_vals_offset=0.01,
+                                                filter_att='GRUPO',
+                                                filter_val='control sano',
+                                                op=op.eq,
+                                                remove_nodes=[34, 83],
+                                                trace=True,
+                                                trace_k_paths=False,
+                                                only_plot=False)
 
 # k_shortest_path_save(prune_type='percentage',
-#                      map=lambda x: 1 / np.log10(1 + x),
-#                      map_name='inv_log',
+#                      map=lambda x: 1 / x,
+#                      map_name='inv',
 #                      k=50,
 #                      prune_vals_given=None,
 #                      prune_vals_number=10,
@@ -808,7 +808,7 @@ pruned_measures(prune_type='percentage',
 #                      trace=True,
 #                      trace_k_paths=False,
 #                      prune_start=0,
-#                      case_start=0,
+#                      case_start=5,
 #                      prune_finish=None,
 #                      case_finish=None)
 
