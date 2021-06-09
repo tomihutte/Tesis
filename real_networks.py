@@ -81,6 +81,7 @@ def k_shortest_paths_load_txt(G,
                               prune_type,
                               prune_val,
                               weight,
+                              group,
                               dists=True,
                               trace=False):
     n_nodes = 82
@@ -94,8 +95,9 @@ def k_shortest_paths_load_txt(G,
     for k_v in range(k_max):
         if trace:
             print('k={}'.format(k_v))
-        fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
-            case, k_v + 1, prune_type, prune_val, weight)
+        fname = "{}_k={}_{}_prune_val={}_{}_{}.txt".format(
+            case, k_v + 1, prune_type, prune_val, weight,
+            '_'.join(group.split()))
         f = open(fname, "r")
         for i, line in enumerate(f):
             if (i > 0):
@@ -113,6 +115,7 @@ def k_shortest_paths_load_txt(G,
                         dists_mat[i, j,
                                   k_v] = path_weight(G, paths[i, j, k_v],
                                                      weight)
+        f.close()
     os.chdir(current_dir)
     if dists:
         return paths, dists_mat
@@ -120,11 +123,16 @@ def k_shortest_paths_load_txt(G,
         return paths
 
 
-def k_shortest_paths_load_npy(prune_type, prune_val, map_name, k, dists=True):
+def k_shortest_paths_load_npy(prune_type,
+                              prune_val,
+                              map_name,
+                              group,
+                              k,
+                              dists=True):
     current_dir = os.getcwd()
     os.chdir(
-        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data\k_paths\{}"
-        .format(map_name))
+        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data\k_paths\{}_{}"
+        .format(map_name, '_'.join(group.split())))
     paths_name = "k_paths_saved_k=50_{}_prune_{}_{}.npy".format(
         prune_type, prune_val * 100, map_name)
     k_paths = np.load(paths_name, allow_pickle=True)
@@ -312,6 +320,8 @@ def plot(x,
          alpha=1,
          fmt='-o'):
     sns.set(style='whitegrid')
+    plt.rcParams["axes.edgecolor"] = "0.15"
+    plt.rcParams["axes.linewidth"] = 1.25
     plt.figure(figsize=(8, 6))
     if legends != None:
         for i in range(len(legends)):
@@ -448,7 +458,12 @@ def pruned_measures(prune_type,
                                             prune_val)
             start = time.time()
             k_paths_loaded, k_dists_loaded = k_shortest_paths_load_npy(
-                prune_type, prune_val, map_name, np.max(k_vals), dists=True)
+                prune_type,
+                prune_val,
+                map_name,
+                filter_val,
+                np.max(k_vals),
+                dists=True)
             if trace:
                 print("Loading k_paths and k_dists - {:.2f} s".format(
                     time.time() - start))
@@ -674,11 +689,17 @@ def k_shortest_path_save(prune_type,
         assert prune_vals_max != None, "prune_vals_max should be max prune value"
         assert prune_vals_number != None, "prune_vals_number should be number of prune values"
         assert prune_vals_offset != None, "prune_vals_offset should be offset from lowest prune value"
+        connectomes_control_sano = connectomes_filtered(
+            'GRUPO',
+            'control sano',
+            op,
+            remove_nodes=remove_nodes,
+            ret_cases=False)
         # voy a calcular el numero minimo de conexiónes que son 0 para algun conectoma
-        nn = connectomes_original.shape[1]
+        nn = connectomes_control_sano.shape[1]
         # solo me importa la parte superior de la matriz, sin diagonal
         min_connectomes_zeros = np.min(
-            (connectomes_original
+            (connectomes_control_sano
              == 0).sum(axis=2).sum(axis=1)) - nn - (nn * (nn - 1) / 2)
         # el porcentaje lo saco dividiendo por la cantidad total de elementos en la parte superior de la matriz
         min_zero_percentage = min_connectomes_zeros / (nn * (nn - 1) / 2)
@@ -689,13 +710,17 @@ def k_shortest_path_save(prune_type,
     else:
         prune_vals = prune_vals_given
 
-    k_paths_save = np.empty(shape=(prune_vals_number, n_connectomes, c_size,
-                                   c_size),
-                            dtype=object)
-    k_dists_save = np.zeros(shape=(prune_vals_number, n_connectomes, c_size,
-                                   c_size))
+    # k_paths_save = np.empty(shape=(prune_vals_number, n_connectomes, c_size,
+    #                                c_size),
+    #                         dtype=object)
+    # k_dists_save = np.zeros(shape=(prune_vals_number, n_connectomes, c_size,
+    #                                c_size))
     start_flag = False
 
+    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths_txt\{}_{}".format(
+        map_name, '_'.join(filter_val.split()))
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
     for i, prune_val in enumerate(prune_vals):
         # les aplico pruning a los conectomas
         connectomes = prune_connectomes(connectomes_original, prune_type,
@@ -717,14 +742,11 @@ def k_shortest_path_save(prune_type,
                     # le agrego un atributo
                     add_edge_map(G, map, map_name)
                     # longitud, aristas usadas y longitud en aristas
-                    k_paths_save[i, j] = global_k_shortest_paths(
-                        G,
-                        k,
-                        trace=trace_k_paths,
-                        weight=map_name,
-                        dists=False)
-                    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths\{}".format(
-                        map_name)
+                    paths = global_k_shortest_paths(G,
+                                                    k,
+                                                    trace=trace_k_paths,
+                                                    weight=map_name,
+                                                    dists=False)
                     for k_v in range(k):
                         fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
                             cases[j], k_v + 1, prune_type, prune_val, map_name)
@@ -734,7 +756,6 @@ def k_shortest_path_save(prune_type,
                         f.write(
                             "Inicio,Fin,Camino(separado por comas),Distancia del camino\n"
                         )
-                        paths = k_paths_save[i, j]
                         for i_idx in range(paths.shape[0]):
                             for j_idx in range(i_idx + 1, paths.shape[1]):
                                 if paths[i_idx, j_idx][k_v] != None:
@@ -756,61 +777,61 @@ def k_shortest_path_save(prune_type,
                     if trace:
                         print('{:.5f} s'.format(end - start))
 
-    paths_name = "k_paths_saved_k={}_{}_prune_{}_{}_{}".format(
-        k, prune_type,
-        np.min(prune_vals) * 100,
-        np.max(prune_vals) * 100, map_name)
-    dists_name = "k_dists_saved_k={}_{}_prune_{}_{}_{}".format(
-        k, prune_type,
-        np.min(prune_vals) * 100,
-        np.max(prune_vals) * 100, map_name)
-    save_file_k = os.path.join(
-        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
-        paths_name)
-    save_file_d = os.join(
-        "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
-        dists_name)
-    np.save(save_file_k, k_paths_save)
-    np.save(save_file_d, k_dists_save)
+    # paths_name = "k_paths_saved_k={}_{}_prune_{}_{}_{}".format(
+    #     k, prune_type,
+    #     np.min(prune_vals) * 100,
+    #     np.max(prune_vals) * 100, map_name)
+    # dists_name = "k_dists_saved_k={}_{}_prune_{}_{}_{}".format(
+    #     k, prune_type,
+    #     np.min(prune_vals) * 100,
+    #     np.max(prune_vals) * 100, map_name)
+    # save_file_k = os.path.join(
+    #     "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
+    #     paths_name)
+    # save_file_d = os.join(
+    #     "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\data",
+    #     dists_name)
+    # np.save(save_file_k, k_paths_save)
+    # np.save(save_file_d, k_dists_save)
 
     pass
 
 
-s, c, e_c, k_p, k_l, k_e, p_v = pruned_measures(prune_type='percentage',
-                                                map=lambda x: 1 /
-                                                (np.log10(1 + x)),
-                                                map_name='inv_log',
-                                                k_vals=[1, 2, 5, 10, 20, 50],
-                                                prune_vals_given=None,
-                                                prune_vals_number=10,
-                                                prune_vals_max=0.85,
-                                                prune_vals_offset=0.01,
-                                                filter_att='GRUPO',
-                                                filter_val='control sano',
-                                                op=op.eq,
-                                                remove_nodes=[34, 83],
-                                                trace=True,
-                                                trace_k_paths=False,
-                                                only_plot=False)
+# s, c, e_c, k_p, k_l, k_e, p_v = pruned_measures(prune_type='percentage',
+#                                                 map=lambda x: 1 /
+#                                                 (np.log10(1 + x)),
+#                                                 map_name='inv_log',
+#                                                 k_vals=[1, 2, 5, 10, 20, 50],
+#                                                 prune_vals_given=None,
+#                                                 prune_vals_number=10,
+#                                                 prune_vals_max=0.85,
+#                                                 prune_vals_offset=0.01,
+#                                                 filter_att='GRUPO',
+#                                                 filter_val='control sano',
+#                                                 op=op.eq,
+#                                                 remove_nodes=[34, 83],
+#                                                 trace=True,
+#                                                 trace_k_paths=False,
+#                                                 only_plot=True)
 
-# k_shortest_path_save(prune_type='percentage',
-#                      map=lambda x: 1 / x,
-#                      map_name='inv',
-#                      k=50,
-#                      prune_vals_given=None,
-#                      prune_vals_number=10,
-#                      prune_vals_max=0.85,
-#                      prune_vals_offset=0.01,
-#                      filter_att='GRUPO',
-#                      filter_val='control sano',
-#                      op=op.eq,
-#                      remove_nodes=[34, 83],
-#                      trace=True,
-#                      trace_k_paths=False,
-#                      prune_start=0,
-#                      case_start=5,
-#                      prune_finish=None,
-#                      case_finish=None)
+k_shortest_path_save(prune_type='percentage',
+                     map=lambda x: 1 / x,
+                     map_name='inv_log',
+                     k=50,
+                     prune_vals_given=None,
+                     prune_vals_number=10,
+                     prune_vals_max=0.85,
+                     prune_vals_offset=0.01,
+                     filter_att='GRUPO',
+                     filter_val='migraña crónica',
+                     op=op.eq,
+                     remove_nodes=[34, 83],
+                     trace=True,
+                     trace_k_paths=False,
+                     prune_start=0,
+                     case_start=46,
+                     prune_finish=None,
+                     case_finish=None)
 
 # c_dir = os.getcwd()
 # os.chdir("C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths")
