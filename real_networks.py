@@ -6,9 +6,18 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import operator as op
+import multiprocessing
 import os
 from networkx.classes.function import path_weight
 from networkx.algorithms.flow import shortest_augmenting_path
+
+
+def inv_log(x):
+    return 1 / np.log10(1 + x)
+
+
+def inv(x):
+    return 1 / x
 
 
 def k_shortest_paths(G, source, target, k, dists_calc=True, weight=None):
@@ -658,6 +667,49 @@ def pruned_measures(prune_type,
     return sh_paths, clustering, edge_connectivity, k_paths, k_lengths, k_edges, prune_vals
 
 
+def process_function_k_paths(connectomes, j, prune_val, prune_vals, cases, map,
+                             map_name, k, prune_type, save_path, trace,
+                             trace_k_paths):
+    connectome = connectomes[j]
+    n_connectomes = len(connectomes)
+    # mido el tiempo
+    start = time.time()
+    # creo un grafo del conectoma
+    G = nx.from_numpy_matrix(connectome)
+    # le agrego un atributo
+    add_edge_map(G, map, map_name)
+    # longitud, aristas usadas y longitud en aristas
+    paths = global_k_shortest_paths(G,
+                                    k,
+                                    trace=trace_k_paths,
+                                    weight=map_name,
+                                    dists=False)
+    for k_v in range(k):
+        fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
+            cases[j], k_v + 1, prune_type, prune_val, map_name)
+        fname = os.path.join(save_path, fname)
+        f = open(fname, "w")
+        f.truncate(0)
+        f.write("Inicio,Fin,Camino(separado por comas),Distancia del camino\n")
+        for i_idx in range(paths.shape[0]):
+            for j_idx in range(i_idx + 1, paths.shape[1]):
+                if paths[i_idx, j_idx][k_v] != None:
+                    f.write("{},{},{},{}\n".format(
+                        i_idx, j_idx,
+                        ','.join([str(e) for e in paths[i_idx, j_idx][k_v]]),
+                        path_weight(G, paths[i_idx, j_idx][k_v], map_name)))
+                else:
+                    f.write("{},{},None,None\n".format(i_idx, j_idx))
+        f.close()
+
+    end = time.time()
+    # printeo el tiempo
+    if trace:
+        print('Prune val: {:.3f}/{:.3f} - {} - Connectome: {}/{} - {:.5f} s'.
+              format(prune_val, np.max(prune_vals), cases[j], j + 1,
+                     n_connectomes, end - start))
+
+
 def k_shortest_path_save(prune_type,
                          map,
                          map_name,
@@ -716,7 +768,6 @@ def k_shortest_path_save(prune_type,
     # k_dists_save = np.zeros(shape=(prune_vals_number, n_connectomes, c_size,
     #                                c_size))
     start_flag = False
-
     save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths_txt\{}_{}".format(
         map_name, '_'.join(filter_val.split()))
     if not os.path.exists(save_path):
@@ -814,35 +865,129 @@ def k_shortest_path_save(prune_type,
 #                                                 trace_k_paths=False,
 #                                                 only_plot=True)
 
-k_shortest_path_save(prune_type='percentage',
-                     map=lambda x: 1 / x,
-                     map_name='inv_log',
-                     k=50,
-                     prune_vals_given=None,
-                     prune_vals_number=10,
-                     prune_vals_max=0.85,
-                     prune_vals_offset=0.01,
-                     filter_att='GRUPO',
-                     filter_val='migraña crónica',
-                     op=op.eq,
-                     remove_nodes=[34, 83],
-                     trace=True,
-                     trace_k_paths=False,
-                     prune_start=0,
-                     case_start=46,
-                     prune_finish=None,
-                     case_finish=None)
+# k_shortest_path_save(prune_type='percentage',
+#                      map=lambda x: 1 / x,
+#                      map_name='inv',
+#                      k=1,
+#                      prune_vals_given=None,
+#                      prune_vals_number=10,
+#                      prune_vals_max=0.85,
+#                      prune_vals_offset=0.01,
+#                      filter_att='GRUPO',
+#                      filter_val='migraña crónica',
+#                      op=op.eq,
+#                      remove_nodes=[34, 83],
+#                      trace=True,
+#                      trace_k_paths=False,
+#                      prune_start=1,
+#                      case_start=13,
+#                      prune_finish=None,
+#                      case_finish=None)
+
+if __name__ == '__main__':
+    __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
+    prune_type = 'percentage'
+    map = inv
+    map_name = 'inv'
+    k = 50
+    prune_vals_given = None
+    prune_vals_number = 10
+    prune_vals_max = 0.85
+    prune_vals_offset = 0.01
+    filter_att = 'GRUPO'
+    filter_val = 'migraña crónica'
+    op = op.eq
+    remove_nodes = [34, 83]
+    trace = True
+    trace_k_paths = False
+    prune_start = 1
+    case_start = 13
+    prune_finish = None
+    case_finish = None
+    connectomes_original, cases = connectomes_filtered(
+        filter_att, filter_val, op, remove_nodes=remove_nodes, ret_cases=True)
+    n_connectomes = len(connectomes_original)
+    c_size = connectomes_original.shape[1]
+    if case_finish == None:
+        case_finish = n_connectomes
+    print('Loading {} connectomes'.format(n_connectomes))
+
+    if prune_vals_given == None:
+        assert prune_vals_max != None, "prune_vals_max should be max prune value"
+        assert prune_vals_number != None, "prune_vals_number should be number of prune values"
+        assert prune_vals_offset != None, "prune_vals_offset should be offset from lowest prune value"
+        connectomes_control_sano = connectomes_filtered(
+            'GRUPO',
+            'control sano',
+            op,
+            remove_nodes=remove_nodes,
+            ret_cases=False)
+        # voy a calcular el numero minimo de conexiónes que son 0 para algun conectoma
+        nn = connectomes_control_sano.shape[1]
+        # solo me importa la parte superior de la matriz, sin diagonal
+        min_connectomes_zeros = np.min(
+            (connectomes_control_sano
+             == 0).sum(axis=2).sum(axis=1)) - nn - (nn * (nn - 1) / 2)
+        # el porcentaje lo saco dividiendo por la cantidad total de elementos en la parte superior de la matriz
+        min_zero_percentage = min_connectomes_zeros / (nn * (nn - 1) / 2)
+        prune_vals = np.linspace(min_zero_percentage - prune_vals_offset,
+                                 prune_vals_max, prune_vals_number)
+        if prune_finish == None:
+            prune_finish = prune_vals_number
+    else:
+        prune_vals = prune_vals_given
+
+    # k_paths_save = np.empty(shape=(prune_vals_number, n_connectomes, c_size,
+    #                                c_size),
+    #                         dtype=object)
+    # k_dists_save = np.zeros(shape=(prune_vals_number, n_connectomes, c_size,
+    #                                c_size))
+    start_flag = False
+    save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths_txt\{}_{}".format(
+        map_name, '_'.join(filter_val.split()))
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    for i, prune_val in enumerate(prune_vals):
+        # les aplico pruning a los conectomas
+        connectomes = prune_connectomes(connectomes_original, prune_type,
+                                        prune_val)
+        j = 0
+        n_process = 4
+        while (j < n_connectomes):
+            if ((i >= prune_start) and ((j >= case_start) | start_flag)):
+                start_flag = True
+                if not ((i >= prune_finish) and (j >= case_finish)):
+                    processes = []
+                    for l in range(n_process):
+                        if j == n_connectomes:
+                            break
+                        # ipdb.set_trace()
+                        p = multiprocessing.Process(
+                            target=process_function_k_paths,
+                            args=(connectomes, j, prune_val, prune_vals, cases,
+                                  map, map_name, k, prune_type, save_path,
+                                  trace, trace_k_paths))
+                        processes.append(p)
+                        p.start()
+                        j += 1
+                    for process in processes:
+                        process.join()
+            else:
+                j += 1
 
 # c_dir = os.getcwd()
-# os.chdir("C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths")
+# os.chdir(
+#     "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths_txt\inv_log_migraña_crónica"
+# )
 # f_list = os.listdir()
 # f_list.reverse()
 # # f_list = f_list[:30]
 # for file in f_list:
 #     # print('prev:\t', file)
-#     name_split = file.split('.t')
-#     name_split[0] += "_inv_log"
-#     name_split[1] = "txt"
+#     # name_split = file.split('.t')
+#     # name_split[0] = name_split[0][:-4]
+#     # name_split[1] = "txt"
+#     # ipdb.set_trace()
 #     # name_split[0] = name_split[0][1:]
 #     # name_split[1] = name_split[1].split('_', 1)
 #     # k = int(name_split[1][0]) + 1
@@ -850,6 +995,6 @@ k_shortest_path_save(prune_type='percentage',
 #     # name_split[1] = '_'.join(name_split[1])
 #     # f_name = '='.join(name_split)
 #     # print("post:\t", f_name)
-#     f_name = ".".join(name_split)
+#     f_name = file.replace("_log", "")  #".".join(name_split)
 #     os.rename(file, f_name)
 # os.chdir(c_dir)
