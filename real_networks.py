@@ -37,7 +37,7 @@ def k_shortest_paths(G, source, target, k, dists_calc=True, weight=None):
                 # agrego la distancia
                 dists[i] = path_weight(G, path, weight=weight)
             if i == k - 1:
-                # si llegue a k caminos, dejo de recorrer
+                # si llegue a k caminos, dejo de recorrerF
                 break
         if i < k - 1:
             # si calcule menos que k caminos, aviso
@@ -249,7 +249,7 @@ def connectomes_filtered(
         connectome_path = connectomes_path + case + "_conectomica_fiber_count.csv"
         # cargo el conectoma
         connectome = np.genfromtxt(connectome_path)
-        # borro la diagonal
+        # borro la diagonal y la parte de abajo
         connectome[np.tril_indices(84)] = 0
         connectomes[i] = connectome
 
@@ -330,6 +330,7 @@ def plot(
                 lw=lw,
                 alpha=alpha,
                 fmt=fmt,
+                barsabove=True,
                 ecolor="black",
             )
         plt.legend(fontsize=fs)
@@ -412,77 +413,6 @@ def add_edge_map(G, map, map_name):
     for u, v in G.edges():
         G.edges[u, v][map_name] = map(G.edges[u, v]["weight"])
     pass
-
-
-def process_function_k_paths(
-    connectomes,
-    j_vals,
-    prune_val,
-    prune_vals,
-    cases,
-    map,
-    map_name,
-    k,
-    prune_type,
-    save_path,
-    trace,
-    trace_k_paths,
-):
-    for j in j_vals:
-        connectome = connectomes[j]
-        n_connectomes = len(connectomes)
-        if trace:
-            print(
-                "Working with - Prune val: {:.3f}/{:.3f} - {} - Connectome: {}/{}".format(
-                    prune_val, np.max(prune_vals), cases[j], j + 1, n_connectomes
-                )
-            )
-        # mido el tiempo
-        start = time.time()
-        # creo un grafo del conectoma
-        G = nx.from_numpy_matrix(connectome)
-        # le agrego un atributo
-        add_edge_map(G, map, map_name)
-        # longitud, aristas usadas y longitud en aristas
-        paths = global_k_shortest_paths(
-            G, k, trace=trace_k_paths, weight=map_name, dists=False
-        )
-        for k_v in range(k):
-            fname = "{}_k={}_{}_prune_val={}_{}.txt".format(
-                cases[j], k_v + 1, prune_type, prune_val, map_name
-            )
-            fname = os.path.join(save_path, fname)
-            f = open(fname, "w")
-            f.truncate(0)
-            f.write("Inicio,Fin,Camino(separado por comas),Distancia del camino\n")
-            for i_idx in range(paths.shape[0]):
-                for j_idx in range(i_idx + 1, paths.shape[1]):
-                    if paths[i_idx, j_idx][k_v] != None:
-                        f.write(
-                            "{},{},{},{}\n".format(
-                                i_idx,
-                                j_idx,
-                                ",".join([str(e) for e in paths[i_idx, j_idx][k_v]]),
-                                path_weight(G, paths[i_idx, j_idx][k_v], map_name),
-                            )
-                        )
-                    else:
-                        f.write("{},{},None,None\n".format(i_idx, j_idx))
-            f.close()
-
-        end = time.time()
-        # printeo el tiempo
-        if trace:
-            print(
-                "Prune val: {:.3f}/{:.3f} - {} - Connectome: {}/{} - {:.5f} s".format(
-                    prune_val,
-                    np.max(prune_vals),
-                    cases[j],
-                    j + 1,
-                    n_connectomes,
-                    end - start,
-                )
-            )
 
 
 def k_shortest_path_save(

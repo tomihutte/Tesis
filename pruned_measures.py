@@ -441,6 +441,6 @@ if __name__ == "__main__":
         remove_nodes=[34, 83],
         trace=True,
         trace_k_paths=False,
-        only_plot=False,
+        only_plot=True,
     )
 
