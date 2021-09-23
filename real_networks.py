@@ -216,6 +216,23 @@ def mean_k_shortest_path_length(G, k_vals, paths, dists):
     return means, p_lengths, edges_percentage
 
 
+def load_atlas(remove_nodes=[34, 83]):
+    atlas_path = r"C:\Users\Tomas\Desktop\Tesis\datos\conjunto_datos_conectomica_migranya\atlas.txt"
+    with open(atlas_path) as f:
+        lines = f.readlines()
+    del lines[0]
+    lines.remove("\n")
+    for i in range(len(lines)):
+        words = lines[i].split()
+        words[1].replace("\n", "")
+        lines[i] = words[1]
+    remove_nodes.sort()
+    remove_nodes.reverse()
+    for node in remove_nodes:
+        del lines[node]
+    return lines
+
+
 def connectomes_filtered(
     filter_attr,
     filter_value,
@@ -333,7 +350,7 @@ def plot(
                 barsabove=True,
                 ecolor="black",
             )
-        plt.legend(fontsize=fs)
+        plt.legend(ncol=3, fontsize=fs)
     else:
         plt.errorbar(
             x,

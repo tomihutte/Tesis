@@ -28,7 +28,7 @@ def pruned_measures(
     n_connectomes = len(connectomes_original)
     print("Loading {} connectomes".format(n_connectomes))
 
-    if prune_vals_given == None:
+    if np.array(prune_vals_given == None).all():
         assert prune_vals_max != None, "prune_vals_max should be max prune value"
         assert (
             prune_vals_number != None
@@ -54,6 +54,7 @@ def pruned_measures(
         )
     else:
         prune_vals = prune_vals_given
+        prune_vals_number = len(prune_vals)
 
     if not (only_plot):
         # creo los arrays donde vamos a guardar las cosas
@@ -426,21 +427,24 @@ def pruned_measures(
 
 
 if __name__ == "__main__":
+    current_dir = os.getcwd()
+    prune_vals = prune_vals_calc(connectomes_filtered("GRUPO", "control sano", op.eq))
+    p_vals = np.concatenate(([0.35], prune_vals))
     s, c, e_c, k_p, k_l, k_e, p_v = pruned_measures(
         prune_type="percentage",
         map=lambda x: 1 / np.log10(1 + x),
-        map_name="inv_log",
+        map_name="inv",
         k_vals=[1, 2, 5, 10, 20, 50],
-        prune_vals_given=None,
+        prune_vals_given=p_vals,
         prune_vals_number=10,
         prune_vals_max=0.85,
         prune_vals_offset=0.01,
         filter_att="GRUPO",
-        filter_val="migraña episódica",
+        filter_val="control sano",
         op=op.eq,
         remove_nodes=[34, 83],
         trace=True,
         trace_k_paths=False,
-        only_plot=True,
+        only_plot=False,
     )
 

@@ -76,10 +76,15 @@ def process_function_k_paths(
 if __name__ == "__main__":
     __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
     prune_type = "percentage"
-    map = inv
-    map_name = "inv"
+    map_name = "inv_log"
+    if map_name == "inv":
+        map = inv
+    elif map_name == "inv_log":
+        map = inv_log
+    else:
+        raise ValueError("Invalid map name")
     k = 50
-    prune_vals_given = None
+    prune_vals_given = [0.35]
     prune_vals_number = 10
     prune_vals_max = 0.85
     prune_vals_offset = 0.01
@@ -90,7 +95,7 @@ if __name__ == "__main__":
     trace = True
     trace_k_paths = False
     prune_start = 0
-    case_start = 0
+    case_start = 64
     prune_finish = None
     case_finish = None
     connectomes_original, cases = connectomes_filtered(
@@ -130,6 +135,7 @@ if __name__ == "__main__":
             prune_finish = prune_vals_number - 1
     else:
         prune_vals = prune_vals_given
+        prune_finish = len(prune_vals) - 1
 
     start_flag = False
     save_path = "C:\\Users\Tomas\Desktop\Tesis\Programacion\\results\pruning\k_paths_txt\{}_{}".format(

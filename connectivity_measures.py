@@ -1,6 +1,6 @@
 from real_networks import *
 import scipy as sp
-
+import pandas as pd
 
 # Calcula la probabilidad de un camino teniendo en cuenta los pesos del conectoma
 # Argumentos:
@@ -31,6 +31,8 @@ def path_probability(G, weight_matrix, path, weight="weight"):
 def k_shortest_paths_length(connectomes, paths, dists, trace=False):
     # la probabilidad de un camino no es simetrica (i->j != i<-j)
     # probabilidad de ida y de vuelta
+    connectomes = np.copy(connectomes)
+    paths = np.copy(paths)
     paths_prob_a = np.zeros(shape=paths.shape)
     paths_prob_b = np.zeros(shape=paths.shape)
     if trace:
@@ -93,6 +95,7 @@ def k_shortest_paths_length(connectomes, paths, dists, trace=False):
 # nodes: array de (m,n) con la centralidad de los n nodos de cada uno de los m conectomas
 # edges: array de (m,n,n) con la centralidad de las n(n-1)/2 aristas de cada uno de los m conectomas
 def k_nodes_edges_centrality(paths, trace=False):
+    paths = np.copy(paths)
     nodes = np.zeros(shape=paths.shape[:2])  # shape = conectomas x nodos
     edges = np.zeros(
         shape=paths.shape[:3]
@@ -143,6 +146,8 @@ def k_nodes_edges_centrality(paths, trace=False):
 # S: np.array de (l,m,n,n) donde esta calculada la medida para los diferentes l valores especificados en k_vals,
 # paara los m conectomas y sus n(n-1)/2 pares de nodos
 def search_information(connectomes, paths, k_vals=[1, 2, 5, 10, 20, 50], trace=False):
+    connectomes = np.copy(connectomes)
+    paths = np.copy(paths)
     paths_prob_a = np.zeros(shape=paths.shape)
     paths_prob_b = np.zeros(shape=paths.shape)
     nn = connectomes.shape[0]
@@ -229,6 +234,8 @@ def matching_index(G, weight_matrix):
 # Devuelve
 # path_transitiviy_weighted: array de (m,n,n), path transitiviy para cada uno de los pares de nodos de los m conectomas, teniendo en cuenta los k caminos mas cortos pesados por su probabilidad
 def k_path_transitivity(connectomes, paths, trace=False):
+    connectomes = np.copy(connectomes)
+    paths = np.copy(paths)
     n_nodes = connectomes.shape[1]
     paths_prob_a = np.zeros(shape=paths.shape)
     paths_prob_b = np.zeros(shape=paths.shape)
@@ -261,20 +268,29 @@ def k_path_transitivity(connectomes, paths, trace=False):
                         )
                         omega = len(path)
                         matching_indexes = [
-                            M[path[i], path[i + 1]] for i in range(omega - 1)
+                            [
+                                M[path[i], path[j]] if j > i else 0
+                                for j in range(omega - 1)
+                            ]
+                            for i in range(omega - 1)
                         ]
+                        # ipdb.set_trace()
                         paths_transitivy[case, node_i, node_j, k] = (
                             2 * np.sum(matching_indexes) / (omega * (omega - 1))
                         )
         if trace:
             print(" - {:.3f} s".format(time.time() - start))
-    # tomo la probabilidad total como la media de la de ida y vuelta
-    paths_prob = (paths_prob_a + paths_prob_b) / 2
-    # normalizo las probabilidades porque las estoy usando como peso
-    p_sum = paths_prob.sum(axis=-1)[..., np.newaxis]
-    paths_prob = np.divide(
-        paths_prob, p_sum, out=np.zeros_like(paths_prob), where=p_sum != 0
+    # normalizo las probabilidades por la suma para todos los k caminos
+    p_sum_a = paths_prob_a.sum(axis=-1)[:, :, :, np.newaxis]
+    p_sum_b = paths_prob_b.sum(axis=-1)[:, :, :, np.newaxis]
+    paths_prob_a = np.divide(
+        paths_prob_a, p_sum_a, out=np.zeros_like(paths_prob_a), where=p_sum_a != 0
     )
+    paths_prob_b = np.divide(
+        paths_prob_b, p_sum_b, out=np.zeros_like(paths_prob_b), where=p_sum_b != 0
+    )
+    # simetrizo la probabilidad (promedio entre ida y vuelta)
+    paths_prob = (paths_prob_a + paths_prob_b) / 2
     # aca tengo a transitividad pesada
     paths_transitivy_weighted = (paths_transitivy * paths_prob).sum(axis=-1)
 
@@ -291,7 +307,8 @@ def k_path_transitivity(connectomes, paths, trace=False):
 # connectomes: array de (m,n,n) con los m conectomas de n nodos
 # Devuelve
 # routing_efficiency: array de (m) con la eciciencia de cada uno de los m conectomas.
-def routing_efficiency(connectomes, trace=False):
+def routing_efficiency(connectomes, map, map_name, trace=False):
+    connectomes = np.copy(connectomes)
     n_connectomes = connectomes.shape[0]
     routing_efficiency = np.zeros(n_connectomes)
     if trace:
@@ -299,7 +316,19 @@ def routing_efficiency(connectomes, trace=False):
         print("Routing efficiency")
     for nn, connectome in enumerate(connectomes):
         g = nx.from_numpy_matrix(connectome)
-        routing_efficiency[nn] = nx.global_efficiency(g)
+        add_edge_map(g, map, map_name)
+        sh_paths_lengths = pd.DataFrame(
+            dict(nx.all_pairs_dijkstra_path_length(g, weight=map_name))
+        )
+        sh_paths_lengths = sh_paths_lengths.sort_index(axis=0).to_numpy()
+        sh_paths_efficiencies = np.divide(
+            1,
+            sh_paths_lengths,
+            where=sh_paths_lengths != 0,
+            out=np.zeros_like(sh_paths_lengths),
+        )
+        N = g.number_of_nodes()
+        routing_efficiency[nn] = np.sum(sh_paths_efficiencies) / (N * (N - 1))
     if trace:
         print(
             "Total routing efficiency run time: {:.3f}".format(
@@ -309,12 +338,13 @@ def routing_efficiency(connectomes, trace=False):
     return routing_efficiency
 
 
-# Calcula la difussion efficiency para los conetcomas indicados
+# Calcula la diffusion efficiency para los conetcomas indicados
 # Argumentos:
 # connectomes: array de (m,n,n), matrices de peso de los m conectomas
 # Devuelve
-# diff_eff: array (m), array con los valores de difussion efficiency para todos los m conectomas
+# diff_eff: array (m), array con los valores de diffusion efficiency para todos los m conectomas
 def diffussion_efficiency(connectomes, trace=False):
+    connectomes = np.copy(connectomes)
     X = np.zeros(shape=connectomes.shape)
     n_nodes = connectomes.shape[1]
     if trace:
@@ -352,6 +382,7 @@ def diffussion_efficiency(connectomes, trace=False):
 # Devuelve:
 # C: array de (m,n,n), matrices de comunicabilidad de las m redes
 def communicability(connectomes, trace=False):
+    connectomes = np.copy(connectomes)
     # donde guardo la matriz de communicability
     C = np.zeros_like(connectomes)
     if trace:
@@ -392,6 +423,7 @@ def communicability(connectomes, trace=False):
 # Devuelve:
 # C: array de (m,2), los dos autovalores de cada red
 def coupling_matrix_eigenvals(connectomes, trace=False):
+    connectomes = np.copy(connectomes)
     # donde guardo lambda_2 y lambda_n
     E = np.zeros(shape=(connectomes.shape[0], 2))
     if trace:
@@ -426,29 +458,30 @@ if __name__ == "__main__":
 
     k = 50
     maps_name = ["inv_log", "inv"]
+    maps = {"inv_log": inv_log, "inv": inv}
     groups = ["control sano", "migraña crónica", "migraña episódica"]
 
     prune_type = "percentage"
     connectomes_control_sano = connectomes_filtered("GRUPO", "control sano", op.eq)
     prune_vals = prune_vals_calc(connectomes_control_sano)
-    prune_val = prune_vals[-4]
+    prune_val = 0.35  # prune_vals[-4]
     k_vals = [1, 2, 5, 10, 20, 50]
 
     for map_name in maps_name:
         print("Map: {}".format(map_name))
         for group in groups:
             print("Group: {}".format(group))
-            if map_name == "inv_log" and group != "migraña episódica":
-                continue
-            connectomes_original = connectomes_filtered("GRUPO", group, op.eq)
-            connectomes = prune_connectomes(connectomes_original, prune_type, prune_val)
+            # if map_name == "inv_log" and group != "migraña episódica":
+            #     continue
+            connectomes = connectomes_filtered("GRUPO", group, op.eq)
+            connectomes = prune_connectomes(connectomes, prune_type, prune_val)
             paths, dists = k_shortest_paths_load_npy(
                 prune_type, prune_val, map_name, group, k, dists=True
             )
 
-            # paths = paths[60:]
-            # dists = dists[60:]
-            # connectomes = connectomes[60:]
+            # paths = paths[:2]
+            # dists = dists[:2]
+            # connectomes = connectomes[:2]
             # connectomes = np.array([connectomes[60]])
 
             current_dir = os.getcwd()
@@ -459,16 +492,18 @@ if __name__ == "__main__":
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             os.chdir(save_dir)
-
+            # ipdb.set_trace()
             D_k = k_shortest_paths_length(connectomes, paths, dists, trace=True)
+            # ipdb.set_trace()
             np.save(
-                "k_shortest_paths_length_k_{}prune_val_{}_{}_{}".format(
+                "k_shortest_paths_length_k_{}_prune_val_{}_{}_{}".format(
                     k, prune_val, map_name, "_".join(group.split())
                 ),
                 D_k,
             )
 
             n_centrality, e_centrality = k_nodes_edges_centrality(paths, trace=True)
+            # ipdb.set_trace()
             np.save(
                 "nodes_k_centrality_k_{}_prune_val_{}_{}_{}".format(
                     k, prune_val, map_name, "_".join(group.split())
@@ -498,7 +533,7 @@ if __name__ == "__main__":
                 P_transitivity,
             )
 
-            RE = routing_efficiency(connectomes, trace=True)
+            RE = routing_efficiency(connectomes, maps[map_name], map_name, trace=True)
             np.save(
                 "routing_efficiency_prune_val_{}_{}".format(
                     prune_val, "_".join(group.split())
@@ -508,7 +543,7 @@ if __name__ == "__main__":
 
             DE = diffussion_efficiency(connectomes, trace=True)
             np.save(
-                "difussion_efficiency_prune_val_{}_{}".format(
+                "diffusion_efficiency_prune_val_{}_{}".format(
                     prune_val, "_".join(group.split())
                 ),
                 DE,
@@ -523,6 +558,7 @@ if __name__ == "__main__":
             )
 
             EV = coupling_matrix_eigenvals(connectomes, trace=True)
+            # ipdb.set_trace()
             np.save(
                 "coupling_matrix_eigenvals_prune_val_{}_{}".format(
                     prune_val, "_".join(group.split())

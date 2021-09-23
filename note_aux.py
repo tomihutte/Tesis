@@ -57,3 +57,59 @@
 #     f_name = file.replace("_log", "")  #".".join(name_split)
 #     os.rename(file, f_name)
 # os.chdir(c_dir)
+
+# def PCA(data, correlation=False, ndim=1, groups=[0, 1, 2]):
+#     # ipdb.set_trace()
+#     data = np.copy(data[..., groups])
+#     if correlation:
+#         data_mat = data_correlation(data)
+#     else:
+#         data_mat = data_covariance(data)
+#     e_vals, e_vecs = np.zeros(shape=(2,) + data.shape[:-1], dtype=object)
+#     for k, measure_mat in enumerate(data_mat):
+#         for i in range(data.shape[1]):
+#             e_val, e_vec = np.linalg.eigh(measure_mat[i])
+#             e_vals[k, i], e_vecs[k, i] = (
+#                 e_val[::-1][:ndim],
+#                 e_vec.T[::-1][:ndim],
+#             )
+#     data_scores = np.empty(shape=data.shape, dtype=object)
+#     for k, measure in enumerate(data):
+#         for i in range(data.shape[1]):
+#             for j in range(data.shape[2]):
+#                 scores = np.zeros(shape=(measure[i, j].shape[1], ndim))
+#                 for dim in range(ndim):
+#                     scores[:, dim] = e_vecs[k, i][dim].dot(measure[i, j])
+#                 data_scores[k, i, j] = scores
+
+#     return e_vals, e_vecs, data_scores
+
+
+# def simple_PCA(data, ndim=1, rowvar=True):
+#     if rowvar:
+#         data = data.T
+#     cov_mat = np.cov(data, rowvar=False)
+#     e_val, e_vec = np.linalg.eigh(cov_mat)
+#     e_val = e_val[::-1][:ndim]
+#     e_vec = e_vec[:, ::-1][:, :ndim]
+#     score = (data - data.mean(axis=0)).dot(e_vec)
+# return e_val, e_vec, score
+
+# def data_covariance(data):
+#     data_cov = np.empty(shape=(data.shape[:-1]), dtype=object)
+#     for k, measure in enumerate(data):
+#         for i in range(data.shape[1]):
+#             cov_matrix = np.cov(np.hstack(measure[i]))
+#             data_cov[k, i] = cov_matrix
+#         # cov_matrix[np.triu_indices_from(cov_matrix)]
+#     return data_cov
+
+
+# def data_correlation(data):
+#     data_corr = np.empty(shape=(data.shape), dtype=object)
+#     for k, measure in enumerate(data):
+#         for i in range(data.shape[1]):
+#             corr_matrix = np.corrcoef(np.hstack(measure[i]))
+#             data_corr[k, i] = corr_matrix
+#         # cov_matrix[np.triu_indices_from(cov_matrix)]
+#     return data_corr
